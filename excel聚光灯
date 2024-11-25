@@ -1,0 +1,57 @@
+  ' 把这些代码放到启用了宏的excel（.xlsm结尾）中，就可以实现聚光灯效果，并且关闭文件时会自动保存，不用提示你保存文件。
+  '   宏--ALT+F11打开--视图--工程资源管理器，放在ThisWorkbook里面
+Private Sub ApplySpotlight(ByVal ws As Worksheet, Optional ByVal Target As Range)
+    Dim rowNum As Long, colNum As Long
+    Dim rng As Range
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    ws.Cells.FormatConditions.Delete
+    If Target Is Nothing Then
+        Set Target = ws.Cells(1, 1)
+    End If
+    rowNum = Target.Row
+    colNum = Target.Column
+    Set rng = ws.Rows(rowNum)
+    With rng.FormatConditions.Add(Type:=xlExpression, Formula1:="=ROW()=" & rowNum)
+        .Interior.Color = RGB(200, 230, 255)
+    End With
+    Set rng = ws.Columns(colNum)
+    With rng.FormatConditions.Add(Type:=xlExpression, Formula1:="=COLUMN()=" & colNum)
+        .Interior.Color = RGB(200, 230, 255)
+    End With
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+End Sub
+
+Private Sub HandleWorkbookEvents(Optional ByVal isOpening As Boolean = False, Optional ByVal isClosing As Boolean = False, Optional ByVal Sh As Object = Nothing, Optional ByVal Target As Range)
+    If isOpening Then
+        ' 打开文件时应用聚光灯效果
+        Call ApplySpotlight(ActiveSheet)
+        ' 禁用保存提示
+        Application.DisplayAlerts = False
+        ' 确保文件不被标记为修改过
+        ThisWorkbook.Saved = True
+        ' 恢复提示
+        Application.DisplayAlerts = True
+    ElseIf isClosing Then
+        ' 在关闭文件时自动保存文件并避免弹出保存提示
+        ThisWorkbook.Save
+        ThisWorkbook.Saved = True  ' 将文件标记为已保存，避免提示保存
+    ElseIf Not Sh Is Nothing Then
+        ' 选区改变时应用聚光灯效果
+        Call ApplySpotlight(Sh, Target)
+    End If
+End Sub
+
+Private Sub Workbook_Open()
+    Call HandleWorkbookEvents(isOpening:=True)
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    Call HandleWorkbookEvents(isClosing:=True)
+End Sub
+
+Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)
+    Call HandleWorkbookEvents(Sh:=Sh, Target:=Target)
+End Sub
+
