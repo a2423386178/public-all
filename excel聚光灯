@@ -1,3 +1,77 @@
+# python代码；运行后选择excel文件，把他们变成xlsm文件并应用聚光灯效果
+import os
+import tkinter as tk
+from tkinter import filedialog
+from win32com.client import DispatchEx
+import pythoncom
+
+# 选择文件对话框
+def select_files(file_type, extensions):
+    root = tk.Tk()
+    root.withdraw()
+    file_paths = filedialog.askopenfilenames(
+        title=f"选择一个或多个 {file_type} 文件",
+        filetypes=[(f"{file_type} 文件", extensions)],
+    )
+    return list(file_paths)
+
+# 修复文件名，替换非法字符
+def sanitize_filename(filename):
+    return "".join(c if c.isalnum() or c in " ._-()" else "_" for c in filename)
+
+# 检查目标文件是否被占用
+def is_file_locked(file_path):
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "a"):
+                pass
+        except IOError:
+            return True
+    return False
+
+# 转换并插入 VBA 代码
+def convert_and_add_vba(xlsx_files, vba_code):
+    # 创建独立的 Excel 实例
+    excel = DispatchEx("Excel.Application")  # 使用独立实例
+    excel.Visible = False
+    excel.DisplayAlerts = False
+    xlsm_files = []
+
+    try:
+        for xlsx_file in xlsx_files:
+            try:
+                # 转换为 .xlsm 文件
+                xlsx_file = os.path.abspath(xlsx_file)
+                wb = excel.Workbooks.Open(xlsx_file)
+                xlsx_dir, xlsx_name = os.path.split(xlsx_file)
+                sanitized_name = sanitize_filename(xlsx_name)
+                xlsm_file = os.path.join(xlsx_dir, os.path.splitext(sanitized_name)[0] + ".xlsm")
+
+                if is_file_locked(xlsm_file):
+                    print(f"目标文件被占用，跳过处理：{xlsm_file}")
+                    wb.Close(False)
+                    continue
+
+                wb.SaveAs(xlsm_file, FileFormat=52)  # 52 是 .xlsm 格式
+                xlsm_files.append(xlsm_file)
+                print(f"已成功转换为 .xlsm 文件：{xlsm_file}")
+
+                # 插入 VBA 代码
+                workbook_vba = wb.VBProject.VBComponents("ThisWorkbook")
+                workbook_vba.CodeModule.DeleteLines(1, workbook_vba.CodeModule.CountOfLines)  # 清空现有代码
+                workbook_vba.CodeModule.AddFromString(vba_code)  # 插入新的代码
+                wb.Save()
+                wb.Close()
+                print(f"已成功添加 VBA 代码到文件：{xlsm_file}")
+
+            except Exception as e:
+                print(f"处理文件时出错：{xlsx_file}\n错误信息：{e}")
+    finally:
+        excel.Quit()  # 仅关闭脚本创建的 Excel 实例
+    return xlsm_files
+
+# VBA 代码
+vba_code = """
   ' 把这些代码放到启用了宏的excel（.xlsm结尾）中，就可以实现聚光灯效果，并且关闭文件时会自动保存，不用提示你保存文件。
   '   宏--ALT+F11打开--视图--工程资源管理器，放在ThisWorkbook里面
 Private Sub ApplySpotlight(ByVal ws As Worksheet, Optional ByVal Target As Range)
@@ -54,4 +128,20 @@ End Sub
 Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)
     Call HandleWorkbookEvents(Sh:=Sh, Target:=Target)
 End Sub
+"""
 
+# 主程序
+if __name__ == "__main__":
+    # 在独立的 COM 上下文中运行
+    pythoncom.CoInitialize()  # 确保线程安全
+    try:
+        print("请选择一个或多个 .xlsx 文件进行处理...")
+        xlsx_files = select_files("Excel", "*.xlsx")
+        if not xlsx_files:
+            print("未选择任何文件，程序退出。")
+        else:
+            print("正在处理文件...")
+            convert_and_add_vba(xlsx_files, vba_code)
+            print("所有文件已处理完成！")
+    finally:
+        pythoncom.CoUninitialize()
